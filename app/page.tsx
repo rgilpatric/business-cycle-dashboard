@@ -647,7 +647,7 @@ export default function BusinessCycleDashboard() {
               <div className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">
                 Business Cycle Dashboard
               </div>
-              <h1 className="mt-2 text-3xl font-semibold text-slate-900">EPB-style cycle engine</h1>
+              <h1 className="mt-2 text-3xl font-semibold text-slate-900">EPB-style cycle engine — REAL RESIDENTIAL TEST</h1>
               <p className="mt-2 max-w-2xl text-slate-600">
                 Main screen emphasizes sequencing, breadth, and rate of change. Click any sector to open the deeper view with long-lookback charts and momentum lines.
               </p>
