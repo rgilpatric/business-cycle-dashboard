@@ -70,7 +70,7 @@ function makeAxis(values: number[]): number[] {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const mid = (min + max) / 2;
-  return [Number(min.toFixed(1)), Number(mid.toFixed(1)), Number(max.toFixed(1))];
+  return [Number(max.toFixed(1)), Number(mid.toFixed(1)), Number(min.toFixed(1))];
 }
 
 function scoreIndicator(yoy: number, sixMonth: number): number {
