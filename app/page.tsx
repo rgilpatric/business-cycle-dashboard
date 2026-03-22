@@ -16,13 +16,7 @@ type ResidentialIndicator = {
   sixMonth: number;
   weakening: boolean;
   unit: string;
-  longTrend: number[];
-  shortTrend: number[];
-  rocTrend: number[];
-  xAxis: string[];
-  longXAxis: string[];
-  yAxis: number[];
-  rocAxis: number[];
+  data: FredPoint[];
 };
 
 async function loadFredCsv(fileName: string): Promise<FredPoint[]> {
@@ -71,25 +65,6 @@ function formatPercent(value: number): string {
   return `${sign}${value.toFixed(1)}%`;
 }
 
-function axisLabels(data: FredPoint[]): string[] {
-  if (!data.length) return [];
-  return [
-    data[0].date.slice(0, 4),
-    data[Math.floor(data.length / 2)].date.slice(0, 4),
-    data[data.length - 1].date.slice(0, 4),
-  ];
-}
-
-function longAxisLabels(data: FredPoint[]): string[] {
-  if (!data.length) return [];
-  return [
-    data[0].date.slice(0, 4),
-    data[Math.floor(data.length / 3)].date.slice(0, 4),
-    data[Math.floor((2 * data.length) / 3)].date.slice(0, 4),
-    data[data.length - 1].date.slice(0, 4),
-  ];
-}
-
 function makeAxis(values: number[]): number[] {
   if (!values.length) return [0, 0, 0];
   const min = Math.min(...values);
@@ -132,17 +107,6 @@ function buildIndicator(
   const yoy = yoyChange(data);
   const sixMonth = sixMonthMomentum(data);
 
-  const longTrend = data.map((d) => d.value);
-  const shortTrend = data.slice(-12).map((d) => d.value);
-
-  const rocTrend = data.slice(-12).map((_, idx) => {
-    const sourceIndex = data.length - 12 + idx;
-    if (sourceIndex < 12) return 0;
-    return Number(
-      pctChange(data[sourceIndex].value, data[sourceIndex - 12].value).toFixed(1)
-    );
-  });
-
   return {
     name,
     latest,
@@ -151,14 +115,43 @@ function buildIndicator(
     sixMonth,
     weakening: yoy < 0 || sixMonth < 0,
     unit,
-    longTrend,
-    shortTrend,
-    rocTrend,
-    xAxis: axisLabels(data),
-    longXAxis: longAxisLabels(data),
-    yAxis: makeAxis(longTrend),
-    rocAxis: makeAxis(rocTrend),
+    data,
   };
+}
+
+function filterByLookback(data: FredPoint[], lookback: string): FredPoint[] {
+  if (lookback === "full") return data;
+
+  const startYear =
+    lookback === "2000" ? 2000 :
+    lookback === "2008" ? 2008 :
+    lookback === "2020" ? 2020 :
+    2000;
+
+  return data.filter((d) => Number(d.date.slice(0, 4)) >= startYear);
+}
+
+function makeXAxisLabels(data: FredPoint[], count = 4): string[] {
+  if (!data.length) return [];
+  if (data.length < count) return data.map((d) => d.date.slice(0, 4));
+
+  const labels: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor((i * (data.length - 1)) / (count - 1));
+    labels.push(data[idx].date.slice(0, 4));
+  }
+  return labels;
+}
+
+function buildRocTrend(data: FredPoint[]): FredPoint[] {
+  const out: FredPoint[] = [];
+  for (let i = 12; i < data.length; i++) {
+    out.push({
+      date: data[i].date,
+      value: Number(pctChange(data[i].value, data[i - 12].value).toFixed(1)),
+    });
+  }
+  return out;
 }
 
 function Sparkline({
@@ -243,6 +236,7 @@ function Sparkline({
 export default function Page() {
   const [indicators, setIndicators] = useState<ResidentialIndicator[] | null>(null);
   const [selected, setSelected] = useState("Housing Starts");
+  const [lookback, setLookback] = useState("2000");
 
   useEffect(() => {
     async function load() {
@@ -276,6 +270,23 @@ export default function Page() {
   }, [indicators]);
 
   const selectedIndicator = indicators?.find((i) => i.name === selected) ?? indicators?.[0];
+
+  const filteredLevelData = selectedIndicator ? filterByLookback(selectedIndicator.data, lookback) : [];
+  const filteredRocData = selectedIndicator ? filterByLookback(buildRocTrend(selectedIndicator.data), lookback) : [];
+
+  const levelValues = filteredLevelData.map((d) => d.value);
+  const rocValues = filteredRocData.map((d) => d.value);
+
+  const levelAxis = makeAxis(levelValues);
+  const rocAxis = makeAxis(rocValues);
+  const levelXAxis = makeXAxisLabels(filteredLevelData, 4);
+  const rocXAxis = makeXAxisLabels(filteredRocData, 4);
+
+  const lookbackLabel =
+    lookback === "2000" ? "Since 2000" :
+    lookback === "2008" ? "Since 2008" :
+    lookback === "2020" ? "Since 2020" :
+    "Full history";
 
   return (
     <div className="min-h-screen bg-slate-100 p-6 md:p-10">
@@ -397,7 +408,7 @@ export default function Page() {
         {selectedIndicator ? (
           <div className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
             <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
                   <div className="text-sm uppercase tracking-[0.18em] text-slate-500">
                     Selected indicator
@@ -410,8 +421,19 @@ export default function Page() {
                     way to catch turning points early.
                   </p>
                 </div>
-                <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">
-                  Latest {selectedIndicator.latestLabel}
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-slate-500">Lookback</label>
+                  <select
+                    value={lookback}
+                    onChange={(e) => setLookback(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                  >
+                    <option value="2000">Since 2000</option>
+                    <option value="2008">Since 2008</option>
+                    <option value="2020">Since 2020</option>
+                    <option value="full">Full history</option>
+                  </select>
                 </div>
               </div>
 
@@ -419,12 +441,12 @@ export default function Page() {
                 <div className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
                   <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
                     <span>Level chart</span>
-                    <span>Lookback: 2000 to present</span>
+                    <span>{lookbackLabel}</span>
                   </div>
                   <Sparkline
-                    values={selectedIndicator.longTrend}
-                    yAxis={selectedIndicator.yAxis}
-                    xAxis={selectedIndicator.longXAxis}
+                    values={levelValues}
+                    yAxis={levelAxis}
+                    xAxis={levelXAxis}
                     title="Indicator scale"
                     tall
                   />
@@ -433,12 +455,12 @@ export default function Page() {
                 <div className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
                   <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
                     <span>Rate of change</span>
-                    <span>YoY view</span>
+                    <span>{lookbackLabel}</span>
                   </div>
                   <Sparkline
-                    values={selectedIndicator.rocTrend}
-                    yAxis={selectedIndicator.rocAxis}
-                    xAxis={selectedIndicator.xAxis}
+                    values={rocValues}
+                    yAxis={rocAxis}
+                    xAxis={rocXAxis}
                     title="Rate-of-change scale"
                     tall
                   />
